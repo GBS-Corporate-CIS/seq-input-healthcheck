@@ -25,7 +25,7 @@ public class JsonDataExtractorTests
         var extractor = new JsonDataExtractor("Person");
         var value = extractor.ExtractData(new StringReader(json));
         var jo = Assert.IsType<JObject>(value);
-        var jv = (JValue)jo["Name"];
+        var jv = (JValue)jo["Name"]!;
         Assert.Equal("Nick", jv.Value);
     }
     

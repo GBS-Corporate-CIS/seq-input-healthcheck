@@ -13,6 +13,7 @@
 // limitations under the License.
 
 using System;
+using System.Diagnostics;
 using System.Globalization;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -24,8 +25,11 @@ namespace Seq.Input.HealthCheck;
 
 class HealthCheckResult
 {
+    [JsonProperty("@st")]
+    public DateTime SpanStartTimestamp { get;  }
+    
     [JsonProperty("@t")]
-    public DateTime UtcTimestamp { get; }
+    public DateTime Timestamp { get; }
 
     [JsonProperty("@x", DefaultValueHandling = DefaultValueHandling.Ignore)]
     public string? Exception { get; }
@@ -38,7 +42,15 @@ class HealthCheckResult
     public string? Level { get; }
 
     [JsonProperty("@r")]
-    public string[] Renderings => new[] {Elapsed.ToString("0.000", CultureInfo.InvariantCulture)};
+    public string[] Renderings => [Elapsed.ToString("0.000", CultureInfo.InvariantCulture)];
+    
+    [JsonProperty("@tr")]
+    public string TraceId { get; }
+    
+    [JsonProperty("@sp")]
+    public string SpanId { get; }
+
+    [JsonProperty] public string Application { get; } = "Seq.Input.HealthCheck";
 
     public string HealthCheckTitle { get; }
     public string Method { get; }
@@ -48,11 +60,10 @@ class HealthCheckResult
     public int? StatusCode { get; }
     public string? ContentType { get; }
     public long? ContentLength { get; }
-    public string ProbeId { get; }
 
     /// <summary>
     /// If the probed URL differs from the target URL, e.g. due to cache-busting query string
-    /// parameters, this field will be set. Otherwise it can be assumed that the target URL was
+    /// parameters, this field will be set. Otherwise, it can be assumed that the target URL was
     /// used as-is.
     /// </summary>
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
@@ -80,12 +91,12 @@ class HealthCheckResult
     public JToken? Data { get; }
 
     public HealthCheckResult(
-        DateTime utcTimestamp,
+        DateTime spanStartTimestamp,
+        DateTime timestamp,
         string healthCheckTitle,
         string method,
         string targetUrl,
         string outcome,
-        string probeId,
         string? level,
         double elapsed,
         int? statusCode,
@@ -96,19 +107,22 @@ class HealthCheckResult
         JToken? data,
         string? probedUrl,
         int? redirectCount,
-        string? finalUrl)
+        string? finalUrl,
+        ActivityTraceId traceId,
+        ActivitySpanId spanId)
     {
-        if (utcTimestamp.Kind != DateTimeKind.Utc)
-            throw new ArgumentException("The timestamp must be UTC.", nameof(utcTimestamp));
+        if (spanStartTimestamp.Kind != DateTimeKind.Utc)
+            throw new ArgumentException("The start timestamp must be UTC.", nameof(timestamp));
 
-        UtcTimestamp = utcTimestamp;
+        if (timestamp.Kind != DateTimeKind.Utc)
+            throw new ArgumentException("The timestamp must be UTC.", nameof(timestamp));
 
+        SpanStartTimestamp = spanStartTimestamp;
+        Timestamp = timestamp;
         HealthCheckTitle = healthCheckTitle ?? throw new ArgumentNullException(nameof(healthCheckTitle));
         Method = method ?? throw new ArgumentNullException(nameof(method));
         TargetUrl = targetUrl ?? throw new ArgumentNullException(nameof(targetUrl));
         Outcome = outcome ?? throw new ArgumentNullException(nameof(outcome));
-        ProbeId = probeId ?? throw new ArgumentNullException(nameof(probeId));
-
         Level = level;
         Elapsed = elapsed;
         StatusCode = statusCode;
@@ -120,5 +134,7 @@ class HealthCheckResult
         ProbedUrl = probedUrl;
         RedirectCount = redirectCount;
         FinalUrl = finalUrl;
+        TraceId = traceId.ToHexString();
+        SpanId = spanId.ToHexString();
     }
 }

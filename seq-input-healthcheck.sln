@@ -9,6 +9,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "sln", "sln", "{7D1D14F7-D40
 		Build.ps1 = Build.ps1
 		LICENSE = LICENSE
 		README.md = README.md
+		Run.ps1 = Run.ps1
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{704915B0-6D95-4CF8-ACC2-5ED939A2913C}"
