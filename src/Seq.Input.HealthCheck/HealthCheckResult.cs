@@ -112,7 +112,7 @@ class HealthCheckResult
         ActivitySpanId spanId)
     {
         if (spanStartTimestamp.Kind != DateTimeKind.Utc)
-            throw new ArgumentException("The start timestamp must be UTC.", nameof(timestamp));
+            throw new ArgumentException("The start timestamp must be UTC.", nameof(spanStartTimestamp));
 
         if (timestamp.Kind != DateTimeKind.Utc)
             throw new ArgumentException("The timestamp must be UTC.", nameof(timestamp));
