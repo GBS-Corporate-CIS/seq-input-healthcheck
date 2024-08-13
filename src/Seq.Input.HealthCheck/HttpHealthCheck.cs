@@ -39,7 +39,6 @@ class HttpHealthCheck
     readonly byte[] _buffer = new byte[2048];
 
     public const string ProbeIdParameterName = "__probe";
-    public const string CorrelationHeaderId = "X-Correlation-ID";
     public const int MaxRedirectCount = 10;
 
     static readonly UTF8Encoding ForgivingEncoding = new(false, false);
@@ -70,17 +69,17 @@ class HttpHealthCheck
         JToken? data = null;
         var redirectCount = 0;
 
-        var probeId = Nonce.Generate(12);
-        var probedUrl = _bypassHttpCaching ? UriHelper.AppendParameter(_targetUrl, ProbeIdParameterName, probeId) : _targetUrl;
+        var traceId = ActivityTraceId.CreateRandom();
+        var spanId = ActivitySpanId.CreateRandom();
+        var probedUrl = _bypassHttpCaching ? UriHelper.AppendParameter(_targetUrl, ProbeIdParameterName, traceId.ToString()) : _targetUrl;
             
         var finalUrl = probedUrl;
             
-        var utcTimestamp = DateTime.UtcNow;
         var sw = Stopwatch.StartNew();
 
         try
         {
-            (var response, finalUrl, redirectCount) = await SendRequest(probedUrl, probeId, cancel);
+            (var response, finalUrl, redirectCount) = await SendRequest(probedUrl, traceId, spanId, cancel);
 
             statusCode = (int) response.StatusCode;
             contentType = response.Content.Headers.ContentType?.ToString();
@@ -98,18 +97,23 @@ class HttpHealthCheck
         }
 
         sw.Stop();
+        var timestamp = DateTime.UtcNow;
+        
+        // Elapsed timing is more useful than precise clock times, so we use the stopwatch rather than collect
+        // a start time explicitly.
+        var startTimestamp = timestamp - sw.Elapsed;
 
         var level = outcome == OutcomeFailed ? "Error" :
             data == null && _extractor != null ? "Warning" :
             null;
 
         return new HealthCheckResult(
-            utcTimestamp,
+            startTimestamp,
+            timestamp,
             _title,
             "GET",
             _targetUrl,
             outcome,
-            probeId,
             level,
             sw.Elapsed.TotalMilliseconds,
             statusCode,
@@ -120,12 +124,17 @@ class HttpHealthCheck
             data,
             probedUrl == _targetUrl ? null : probedUrl,
             _shouldFollowRedirects ? redirectCount : null,
-            redirectCount > 0 ? finalUrl : null);
+            redirectCount > 0 ? finalUrl : null,
+            traceId,
+            spanId);
     }
 
-    void AddHeadersToRequest(HttpRequestMessage request, string probeId)
+    void AddHeadersToRequest(HttpRequestMessage request, ActivityTraceId traceId, ActivitySpanId spanId)
     {
-        request.Headers.Add(CorrelationHeaderId, probeId);
+        // The sampled bit (`-01`) is set because it communicates "the caller may have recorded trace data", which
+        // is the case.
+        request.Headers.Add("traceparent", $"00-{traceId}-{spanId}-01");
+
         foreach (var (name, value) in _headers)
         {
             // This will throw if a header is duplicated (better for the user to detect this configuration problem).
@@ -136,7 +145,7 @@ class HttpHealthCheck
             request.Headers.CacheControl = new CacheControlHeaderValue {NoStore = true};
     }
 
-    async Task<(HttpResponseMessage, string, int)> SendRequest(string requestUri, string correlationId, CancellationToken cancel)
+    async Task<(HttpResponseMessage, string, int)> SendRequest(string requestUri, ActivityTraceId traceId, ActivitySpanId spanId, CancellationToken cancel)
     {
         HttpResponseMessage response = null!;
         var totalRedirects = 0;
@@ -144,7 +153,7 @@ class HttpHealthCheck
         for (var i = 0; i <= MaxRedirectCount; i++)
         {
             var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
-            AddHeadersToRequest(request, correlationId);
+            AddHeadersToRequest(request, traceId, spanId);
 
             response = await _httpClient.SendAsync(request, cancel);
             var statusCode = (int) response.StatusCode;
